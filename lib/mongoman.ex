@@ -1,6 +1,6 @@
 defmodule Mongoman do
   @moduledoc ~S"""
-  Manages mongod processes and configuration to manage replica sets.
+  Manages `mongod` instances to configure and manage replica sets.
   """
   alias Mongoman.ReplicaSet
   alias Mongoman.Instance
@@ -16,4 +16,12 @@ defmodule Mongoman do
 
   @spec add_instance_to_replica_set(ReplicaSet.t, Instance.t) :: ReplicaSet.t
   def add_instance_to_replica_set(replica_set, _instance) do replica_set end
+
+  def mongod_opts(dir, repl_set, opts \\ []) do
+    ["mongod" |
+     (if repl_set == nil do [] else ["--replSet", repl_set.name] end) ++
+     ["--logpath", Path.join(dir, "log"),
+      "--port", Keyword.get(opts, :port, 27017) |> to_string,
+      "--dbpath", Path.join(dir, "data")]]
+  end
 end
