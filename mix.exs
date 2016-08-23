@@ -17,11 +17,13 @@ defmodule Mongoman.Mixfile do
 
   defp deps do
     [{:erlexec, "~> 1.2.2"},
-     {:credo, "~> 0.4.8", only: [:dev, :test]}]
+     {:credo, "~> 0.4.8", only: [:dev, :test]},
+     {:ex_doc, "~> 0.13.0", only: :dev}]
   end
 
   defp package do
     [name: :mongoman,
+     description: "Configures and starts local or distributed MongoDB clusters",
      maintainers: ["Vertify", "Christian Howe"],
      licenses: ["Apache 2.0"],
      links: %{"Docs" => "https://hexdocs.pm/mongoman",
