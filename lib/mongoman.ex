@@ -1,6 +1,6 @@
 defmodule Mongoman do
   @moduledoc ~S"""
-  Manages `mongod` instances to configure and manage replica sets.
+  Manages `mongod` instances to configure and run replica sets.
   """
   alias Mongoman.ReplicaSet
   alias Mongoman.Instance

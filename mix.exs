@@ -12,7 +12,8 @@ defmodule Mongoman.Mixfile do
      docs: fn ->
        {ref, 0} =
          System.cmd("git", ["rev-parse", "--verify", "--quiet", "HEAD"])
-       [source_ref: ref, main: "readme", extras: ["README.md"]]
+       [source_ref: ref, source_url: "https://github.com/vertify/mongoman",
+        main: "readme", extras: ["README.md"]]
      end,
      package: package()]
   end
