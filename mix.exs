@@ -3,11 +3,17 @@ defmodule Mongoman.Mixfile do
 
   def project do
     [app: :mongoman,
+     description: "Configures and starts local or distributed MongoDB clusters",
      version: "0.1.0",
      elixir: "~> 1.3",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
      deps: deps(),
+     docs: fn ->
+       {ref, 0} =
+         System.cmd("git", ["rev-parse", "--verify", "--quiet", "HEAD"])
+       [source_ref: ref, main: "readme", extras: ["README.md"]]
+     end,
      package: package()]
   end
 
@@ -22,9 +28,7 @@ defmodule Mongoman.Mixfile do
   end
 
   defp package do
-    [name: :mongoman,
-     description: "Configures and starts local or distributed MongoDB clusters",
-     maintainers: ["Vertify", "Christian Howe"],
+    [maintainers: ["Vertify", "Christian Howe"],
      licenses: ["Apache 2.0"],
      links: %{"Docs" => "https://hexdocs.pm/mongoman",
               "GitHub" => "https://github.com/vertify/mongoman"}]
