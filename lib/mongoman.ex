@@ -2,26 +2,21 @@ defmodule Mongoman do
   @moduledoc ~S"""
   Manages `mongod` instances to configure and run replica sets.
   """
-  alias Mongoman.ReplicaSet
-  alias Mongoman.Instance
 
-  @spec start_instance(Keyword.t) :: Instance.t
-  def start_instance(_opts) do %Instance{} end
+  @spec start_local_replica_set(String.t, pos_integer) ::
+          {:ok, pid} |
+          {:error, any}
+  def start_local_replica_set(name, num_nodes) do
+    {:ok, nil}
+  end
 
-  @spec stop_instance(Instance.t) :: :ok | {:error, any}
-  def stop_instance(_instance) do :ok end
+  @spec start_distributed_replica_set(String.t, [node]) ::
+          {:ok, pid} |
+          {:error, any}
+  def start_distributed_replica_set(name, nodes), do: {:error, :not_implemented}
 
-  @spec list_instances :: [Instance.t]
-  def list_instances do [] end
-
-  @spec add_instance_to_replica_set(ReplicaSet.t, Instance.t) :: ReplicaSet.t
-  def add_instance_to_replica_set(replica_set, _instance) do replica_set end
-
-  def mongod_opts(dir, repl_set, opts \\ []) do
-    ["mongod" |
-     (if repl_set == nil do [] else ["--replSet", repl_set.name] end) ++
-     ["--logpath", Path.join(dir, "log"),
-      "--port", Keyword.get(opts, :port, 27017) |> to_string,
-      "--dbpath", Path.join(dir, "data")]]
+  @spec stop_cluster(pid) :: :ok | {:error, any}
+  def stop_cluster(_cluster_pid) do
+    :ok
   end
 end
