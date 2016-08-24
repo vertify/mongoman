@@ -7,6 +7,14 @@ defmodule Mongoman.LocalReplicaSet do
     GenServer.start_link(__MODULE__, [name, num_nodes], gen_server_opts)
   end
 
+  def get_nodes(pid) do
+    GenServer.call(pid, :get_nodes)
+  end
+
+  def stop(pid) do
+    GenServer.stop(pid)
+  end
+
   # GenServer callbacks
 
   @doc false
@@ -16,6 +24,12 @@ defmodule Mongoman.LocalReplicaSet do
       {:ok, nodes} -> create_replica_set(nodes)
       {:error, reason} -> {:stop, reason}
     end
+  end
+
+  def handle_call(:get_nodes, _from, nodes) do
+    node_addresses =
+      Enum.map(nodes, fn {hostname, port, _} -> "#{hostname}:#{port}" end)
+    {:reply, {:ok, node_addresses}, nodes}
   end
 
   defp generate_ports(num_nodes, start_port \\ 27017)
