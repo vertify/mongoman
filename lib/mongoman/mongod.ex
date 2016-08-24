@@ -1,6 +1,6 @@
 defmodule Mongoman.Mongod do
   @moduledoc ~S"""
-  Returns arguments for starting up mongod in the given base directory.
+  Returns arguments for starting up mongod with the given ID.
   """
   def run(mongod_id, repl_set \\ nil, opts \\ []) do
     mongod = System.find_executable("mongod")
@@ -13,7 +13,7 @@ defmodule Mongoman.Mongod do
         (if repl_set == nil, do: [], else: ["--replSet", repl_set]) ++
         extra_mongod_opts(opts) |> Enum.map(&String.to_charlist/1)
       with :ok = File.mkdir_p(data_path),
-        do: :exec.run_link(args, [])
+        do: :exec.run_link(args, [:monitor])
     else
       {:error, :enoent}
     end

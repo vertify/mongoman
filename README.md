@@ -24,7 +24,7 @@ Add `mongoman` to your list of dependencies in `mix.exs`:
 
   ```elixir
   # Starts a local replica set named "my_repl_set" with 5 members
-  Mongoman.start_local_replica_set("my_repl_set", 5)
+  {:ok, pid} = Mongoman.LocalReplicaSet.start_link("my_repl_set", 5)
   ```
 
 ## Similar Projects
