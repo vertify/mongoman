@@ -16,7 +16,7 @@ defmodule Mongoman do
   def start_distributed_replica_set(name, nodes), do: {:error, :not_implemented}
 
   @spec stop_cluster(pid) :: :ok | {:error, any}
-  def stop_cluster(_cluster_pid) do
+  def stop_cluster(_pid) do
     :ok
   end
 end

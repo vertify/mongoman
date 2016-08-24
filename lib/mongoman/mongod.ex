@@ -21,15 +21,12 @@ defmodule Mongoman.Mongod do
   defp extra_mongod_opts([_ | rest_opts]), do: extra_mongod_opts(rest_opts)
   defp extra_mongod_opts([]), do: []
 
-  def choose_port do
-    try_port 27017
-  end
-
-  defp try_port(port) do
-    if port_available?(port) do
-      port
+  def choose_port(start_port \\ 27017) do
+    if port_available?(start_port) do
+      start_port
     else
-      try_port(port + 1)
+      # there's no conceivable way this is going to continue forever
+      choose_port(start_port + 1)
     end
   end
 
