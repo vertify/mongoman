@@ -2,19 +2,17 @@ defmodule Mongoman.Mongod do
   @moduledoc ~S"""
   Returns arguments for starting up mongod in the given base directory.
   """
-  def args(base_dir, repl_set \\ nil, opts \\ []) do
-    dir = Path.join(repl_set[:name] || "", base_dir)
+  def args(repl_set \\ nil, opts \\ []) do
     extra_opts =
       if opts[:local] == true and opts[:port] == nil do
-        Keyword.put(opts, :port, Util.choose_port)
+        Keyword.put(opts, :port, choose_port)
       else
         opts
       end |> Keyword.delete(:local)
 
-    ["mongod", "--logpath", Path.join(dir, "log"),
-               "--dbpath", Path.join(dir, "data")] ++
-    (if get_in(repl_set, [:name]) == nil,
-       do: [], else: ["--replSet", repl_set.name]) ++
+    ["mongod", "--logpath", Path.join(repl_set || "", "log"),
+               "--dbpath", Path.join(repl_set || "", "data")] ++
+    (if repl_set == nil, do: [], else: ["--replSet", repl_set]) ++
     extra_mongod_opts(extra_opts)
   end
 
@@ -23,7 +21,7 @@ defmodule Mongoman.Mongod do
   defp extra_mongod_opts([_ | rest_opts]), do: extra_mongod_opts(rest_opts)
   defp extra_mongod_opts([]), do: []
 
-  defp choose_port do
+  def choose_port do
     try_port 27017
   end
 
