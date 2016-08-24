@@ -52,13 +52,28 @@ defmodule Mongoman do
     end
   end
 
-  defp start_nodes(ports, repl_set) when is_integer(hd(ports)) do
-    nodes = Enum.reduce(ports, {[], nil}, fn
-      (port, {nodes, nil}) ->
-        {nodes, nil}
-      (port, {_, error}) -> error
+  defp start_nodes(nodes, repl_set) do
+    result = Enum.reduce(nodes, {[], nil}, fn
+      (my_node, {mongods, nil}) ->
+        case start_node(my_node, repl_set) do
+          {:ok, my_mongod} ->
+            {[my_mongod | mongods], nil}
+          {:error, error} ->
+            {nodes, error}
+        end
+      (port, error) -> error
     end)
-    {:ok, nodes}
+    case result do
+      {nodes, nil} ->
+        {:ok, nodes |> Enum.reverse}
+      {started_nodes, error} ->
+        :ok = stop_nodes(started_nodes)
+        {:error, error}
+    end
+  end
+
+  defp start_node(port, repl_set) when is_integer(port) do
+    {:ok, port}
   end
 
   defp create_replica_set({:ok, nodes}) do
@@ -67,5 +82,9 @@ defmodule Mongoman do
 
   defp create_replica_set({:error, _} = error) do
     error
+  end
+
+  defp stop_nodes(nodes) do
+    :ok
   end
 end
