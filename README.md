@@ -20,6 +20,13 @@ Add `mongoman` to your list of dependencies in `mix.exs`:
   end
   ```
 
+## Examples
+
+  ```elixir
+  # Starts a local replica set named "my_repl_set" with 5 members
+  Mongoman.start_local_replica_set("my_repl_set", 5)
+  ```
+
 ## Similar Projects
 
 - https://github.com/christkv/mongodb-topology-manager
