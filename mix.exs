@@ -24,6 +24,7 @@ defmodule Mongoman.Mixfile do
 
   defp deps do
     [{:erlexec, "~> 1.2.2"},
+     {:poison, "~> 2.2.0"},
      {:credo, "~> 0.4.8", only: [:dev, :test]},
      {:ex_doc, "~> 0.13.0", only: :dev}]
   end

@@ -63,6 +63,7 @@ defmodule Mongoman do
         end
       (port, error) -> error
     end)
+
     case result do
       {nodes, nil} ->
         {:ok, nodes |> Enum.reverse}
@@ -73,18 +74,55 @@ defmodule Mongoman do
   end
 
   defp start_node(port, repl_set) when is_integer(port) do
-    {:ok, port}
+    {:ok, _, id} = Mongoman.Mongod.run(to_string(port), repl_set, port: port)
+    {:ok, hostname} = mongosh("getHostName()", port: port)
+    {:ok, {hostname, port, id}}
   end
 
   defp create_replica_set({:ok, nodes}) do
-    {:ok, nodes}
+    {cmd_hostname, cmd_port, _} = hd(nodes)
+    mongosh_opts = [hostname: cmd_hostname, port: cmd_port]
+    with {:ok, json} <- mongosh("rs.initiate()", mongosh_opts),
+         {:ok, decoded} <- Poison.decode(json) do
+      if decoded["ok"] == 0 && decoded["code"] != 23 do
+        {:error, decoded["errmsg"]}
+      else
+        if length(nodes) > 1 do
+          add_nodes(mongosh_opts, tl(nodes))
+        end
+        {:ok, nodes}
+      end
+    end
   end
 
   defp create_replica_set({:error, _} = error) do
     error
   end
 
+  defp add_nodes(mongosh_opts, nodes) do
+    Enum.map(nodes, fn {hostname, port, _} ->
+      {:ok, json} = mongosh("rs.add('#{hostname}:#{port}')", mongosh_opts)
+      {:ok, %{"ok" => 1}} = Poison.decode(json)
+    end)
+  end
+
   defp stop_nodes(nodes) do
     :ok
+  end
+
+  def mongosh(js, opts \\ []) do
+    port = Keyword.get(opts, :port)
+    hostname = Keyword.get(opts, :hostname)
+    args =
+      ["--eval", to_string(js), "--quiet"] ++
+      (if port != nil, do: ["--port", to_string(port)], else: []) ++
+      (if hostname != nil, do: ["--host", to_string(hostname)], else: [])
+    {output, exit_code} = System.cmd("mongo", args)
+
+    if exit_code == 0 do
+      {:ok, output |> String.trim_trailing}
+    else
+      {:error, output, exit_code}
+    end
   end
 end
