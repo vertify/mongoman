@@ -64,23 +64,20 @@ defmodule Mongoman.LocalReplicaSet do
   end
 
   defp start_nodes(nodes, repl_set) do
-    result = Enum.reduce(nodes, {[], nil}, fn
-      (my_node, {mongods, nil}) ->
-        case start_node(my_node, repl_set) do
-          {:ok, my_mongod} ->
-            {[my_mongod | mongods], nil}
-          {:error, error} ->
-            {nodes, error}
-        end
-      (port, error) -> error
-    end)
+    {errors, started_nodes} =
+      nodes
+      |> Enum.map(&(Task.async fn -> start_node(&1, repl_set) end))
+      |> Enum.map(&Task.await/1)
+      |> Enum.partition(fn
+        {:ok, _} -> false
+        error -> true
+      end)
 
-    case result do
-      {nodes, nil} ->
-        {:ok, nodes |> Enum.reverse}
-      {started_nodes, error} ->
-        :ok = stop_nodes(started_nodes)
-        {:error, error}
+    if Enum.empty? errors do
+      {:ok, started_nodes}
+    else
+      :ok = stop_nodes(started_nodes)
+      {:error, errors}
     end
   end
 
@@ -119,7 +116,7 @@ defmodule Mongoman.LocalReplicaSet do
         ({hostname, port, _}, :ok) ->
           with {:ok, json} <- Mongoman.mongosh("rs.add('#{hostname}:#{port}')",
                                                mongosh_opts),
-               {:ok, %{"ok" => 1}} = Poison.decode(json) do
+               {:ok, %{"ok" => 1}} <- Poison.decode(json) do
             :ok
           end
         (_, error) ->
