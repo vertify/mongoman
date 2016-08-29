@@ -3,20 +3,20 @@ defmodule Mongoman.Mongod do
   Returns arguments for starting up mongod with the given ID.
   """
   def run(mongod_id, repl_set \\ nil, opts \\ []) do
-    mongod = System.find_executable("mongod")
     base_path = Path.join(repl_set || "", mongod_id)
-    if mongod != nil do
-      data_path = Path.join(base_path, "data")
-      args =
-        [mongod, "--logpath", Path.join(base_path, "log"),
-                 "--dbpath", data_path] ++
-        (if repl_set == nil, do: [], else: ["--replSet", repl_set]) ++
-        extra_mongod_opts(opts) |> Enum.map(&String.to_charlist/1)
-      with :ok = File.mkdir_p(data_path),
-        do: :exec.run_link(args, [:monitor])
-    else
-      {:error, :enoent}
-    end
+    data_path = Path.join(base_path, "data")
+    log_path = Path.join(base_path, "log")
+    lock_path = Path.join(data_path, "mongod.lock")
+
+    args =
+      ["--logpath", log_path, "--fork", "--dbpath", data_path] ++
+      (if repl_set == nil, do: [], else: ["--replSet", repl_set]) ++
+      extra_mongod_opts(opts) |> Enum.map(&String.to_charlist/1)
+    with :ok <- File.mkdir_p(data_path),
+         {_, 0} <- System.cmd("mongod", args),
+         {:ok, lock_data} <- File.read(lock_path),
+         {os_pid, _} <- Integer.parse(String.trim(lock_data)),
+         do: :exec.manage(os_pid, [:monitor])
   end
 
   defp extra_mongod_opts([{:port, port} | rest_opts]),
