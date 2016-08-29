@@ -45,26 +45,16 @@ defmodule Mongoman.LocalReplicaSet do
 
   defp discover_replica_set(name) do
     with {:ok, existing_ports} <- File.ls(name) do
-      {existing_nodes, errors} = Enum.map(existing_ports, fn port ->
-        lock = Path.join([name, port, "data/mongod.lock"])
-        with {port, _} <- port |> String.trim |> Integer.parse do
-          with {:ok, hostname} <- node_hostname(port),
-               {:ok, pid_str} <- File.read(lock),
-               {pid, _} <- pid_str |> String.trim |> Integer.parse,
-               {:ok, _, id} <- :exec.manage(pid, [:monitor]) do
-            {:ok, {hostname, port, id}}
-          else
-            _ ->
-              start_node(port, name)
-          end
-        end
-      end) |> Enum.partition(fn
-        {:ok, _} -> true
-        _ -> false
-      end)
+      {existing_nodes, errors} =
+        existing_ports
+        |> Enum.map(&start_existing/1)
+        |> Enum.partition(fn
+          {:ok, _} -> true
+          _ -> false
+        end)
 
       if Enum.empty? errors do
-        {:ok, existing_nodes}
+        {:ok, existing_nodes |> Enum.map(fn {:ok, data} -> data end)}
       else
         :ok = stop_nodes(existing_nodes)
         {:error, errors}
@@ -129,6 +119,19 @@ defmodule Mongoman.LocalReplicaSet do
     with {:ok, _, id} <- Mongod.run(to_string(port), repl_set, port: port),
          {:ok, hostname} <- node_hostname(port),
          do: {:ok, {hostname, port, id}}
+  end
+
+  defp start_existing(port) do
+    lock = Path.join([name, port, "data/mongod.lock"])
+    with {:ok, hostname} <- node_hostname(port),
+         {:ok, pid_str} <- File.read(lock),
+         {pid, _} <- pid_str |> String.trim |> Integer.parse,
+         {:ok, _, id} <- :exec.manage(pid, [:monitor]) do
+      {:ok, {hostname, port, id}}
+    else
+      _ ->
+        start_node(port, name)
+    end
   end
 
   defp node_hostname(port) do
