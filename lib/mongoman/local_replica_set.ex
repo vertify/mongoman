@@ -47,7 +47,7 @@ defmodule Mongoman.LocalReplicaSet do
     with {:ok, existing_ports} <- File.ls(name) do
       {existing_nodes, errors} =
         existing_ports
-        |> Enum.map(&start_existing/1)
+        |> Enum.map(&start_existing(&1, name))
         |> Enum.partition(fn
           {:ok, _} -> true
           _ -> false
@@ -102,7 +102,7 @@ defmodule Mongoman.LocalReplicaSet do
       |> Enum.map(&Task.await(&1, 10000))
       |> Enum.partition(fn
         {:ok, _} -> false
-        error -> true
+        _ -> true
       end)
 
     started_nodes = Enum.map(started_nodes, fn {:ok, n} -> n end)
@@ -121,7 +121,7 @@ defmodule Mongoman.LocalReplicaSet do
          do: {:ok, {hostname, port, id}}
   end
 
-  defp start_existing(port) do
+  defp start_existing(port, name) do
     lock = Path.join([name, port, "data/mongod.lock"])
     with {:ok, hostname} <- node_hostname(port),
          {:ok, pid_str} <- File.read(lock),
