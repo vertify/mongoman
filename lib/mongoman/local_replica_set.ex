@@ -121,16 +121,18 @@ defmodule Mongoman.LocalReplicaSet do
          do: {:ok, {hostname, port, id}}
   end
 
-  defp start_existing(port, name) do
-    lock = Path.join([name, port, "data/mongod.lock"])
-    with {:ok, hostname} <- node_hostname(port),
-         {:ok, pid_str} <- File.read(lock),
-         {pid, _} <- pid_str |> String.trim |> Integer.parse,
-         {:ok, _, id} <- :exec.manage(pid, [:monitor]) do
-      {:ok, {hostname, port, id}}
-    else
-      _ ->
-        start_node(port, name)
+  defp start_existing(port_str, name) do
+    lock = Path.join([name, port_str, "data/mongod.lock"])
+    with {port, _} <- port_str |> String.trim |> Integer.parse do
+      with {:ok, hostname} <- node_hostname(port),
+           {:ok, pid_str} <- File.read(lock),
+           {pid, _} <- pid_str |> String.trim |> Integer.parse,
+           {:ok, _, id} <- :exec.manage(pid, [:monitor]) do
+        {:ok, {hostname, port, id}}
+      else
+        _ ->
+          start_node(port, name)
+      end
     end
   end
 
