@@ -19,7 +19,8 @@ rediscovered through the config of static nodes. If all the static nodes die, or
 there is a network partition that separates a set of dynamic nodes from the list
 of static nodes while Mongoman is disconnected, it's possible for Mongoman to
 lose a node. To prevent this, use a sufficiently large number of static nodes in
-your configuration.
+your configuration. It's recommended to include all the voting members of a
+replica set in the static configuration.
 
 ## Starting a Remote MongoDB Instance
 
