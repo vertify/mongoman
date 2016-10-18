@@ -4,7 +4,7 @@ defmodule Mongoman.Mixfile do
   def project do
     [app: :mongoman,
      description: "Configures and starts local or distributed MongoDB clusters",
-     version: "0.1.5",
+     version: "0.1.6",
      elixir: "~> 1.3",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
@@ -24,7 +24,7 @@ defmodule Mongoman.Mixfile do
 
   defp deps do
     [{:erlexec, "~> 1.3.0"},
-     {:poison, "~> 3.0.0"},
+     {:poison, "~> 3.0"},
      {:credo, "~> 0.4.8", only: [:dev, :test]},
      {:ex_doc, "~> 0.13.0", only: :dev}]
   end
