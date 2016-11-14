@@ -1,18 +1,20 @@
-defmodule Mongoman.Mongod do
-  def start(name, repl_set_name) do
+defmodule Mongoman.MongoCLI do
+  def mongod(name, repl_set_name) do
     with {:ok, _} <- create_container(name, repl_set_name),
          {:ok, ips} when length(ips) > 0 <- container_ip(name),
          ip = List.first(ips) do
       {:ok, ips}
     else
-      {:ok, []} -> {:error, :docker_missing_ip}
+      {:ok, []} ->
+        IO.puts "starting"
+        {:error, :docker_missing_ip}
       error -> error
     end
   end
 
   def create_container(name, repl_set_name) do
     args = [
-      "run", "-d", "--name", name, "mongo",
+      "run", "-d", "--name", name, "--restart", "on-failure:10", "mongo",
       "mongod", "--replSet", repl_set_name
     ]
     opts = [stderr_to_stdout: true]
@@ -35,7 +37,8 @@ defmodule Mongoman.Mongod do
     with {ip_addresses, 0} <- System.cmd("docker", args, opts) do
       {:ok, String.split(ip_addresses, ~r{\s}, trim: true)}
     else
-      {error, _} -> {:error, String.trim(error)}
+      {error, _} ->
+        {:error, String.trim(error)}
     end
   end
 
@@ -49,6 +52,15 @@ defmodule Mongoman.Mongod do
         wait_for_container(container_ip)
       {:error, _} = error ->
         error
+    end
+  end
+
+  def mongo(js, host) do
+    args = ["--eval", to_string(js), "--quiet", "--host", to_string(host)]
+    with {output, 0} <- System.cmd("mongo", args) do
+      {:ok, String.trim(output)}
+    else
+      {error, _} -> {:error, String.trim(error)}
     end
   end
 end

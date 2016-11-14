@@ -1,6 +1,6 @@
 defmodule Mongoman.ReplicaSet do
   use GenServer
-  alias Mongoman.{Mongod, ReplicaSetConfig, ReplicaSetMember}
+  alias Mongoman.{MongoCLI, ReplicaSetConfig, ReplicaSetMember}
 
   @spec start_link(ReplicaSetConfig.t, Keyword.t) :: GenServer.on_start
   def start_link(initial_config, gen_server_opts \\ []) do
@@ -37,15 +37,17 @@ defmodule Mongoman.ReplicaSet do
 
   def discover(config) do
     %ReplicaSetConfig{id: repl_set_name, members: members} = config
-    Enum.reduce(members, false, fn (member, exists?) ->
-      %ReplicaSetMember{id: id} = member
-      container = make_name(repl_set_name, id)
-      with {:ok, ips} when length(ips) > 0 <- Mongod.container_ip(container) do
-        true
-      else
-        _ -> if exists? do exists? else false end
-      end
-    end)
+    Enum.reduce(members, false, &discover_member(repl_set_name, &1, &2))
+  end
+
+  defp discover_member(repl_set_name, member, exists?) do
+    %ReplicaSetMember{id: id} = member
+    container = make_name(repl_set_name, id)
+    with {:ok, ips} when length(ips) > 0 <- MongoCLI.container_ip(container) do
+      true
+    else
+      _ -> if exists? do exists? else false end
+    end
   end
 
   @doc false
@@ -59,10 +61,10 @@ defmodule Mongoman.ReplicaSet do
   end
 
   defp wait_for_all(config) do
-    %ReplicaSetConfig{id: repl_set_name, members: members} = config
+    %ReplicaSetConfig{members: members} = config
     Enum.reduce(members, :ok, fn
       (%ReplicaSetMember{host: ip}, :ok) ->
-        Mongod.wait_for_container(ip)
+        MongoCLI.wait_for_container(ip)
       (_, error) -> error
     end)
   end
@@ -83,12 +85,12 @@ defmodule Mongoman.ReplicaSet do
   defp ensure_started(member, repl_set_name) do
     with %ReplicaSetMember{id: id} <- member,
          name = make_name(repl_set_name, id) do
-      with {:ok, ips} when length(ips) > 0 <- Mongod.container_ip(name) do
+      with {:ok, ips} when length(ips) > 0 <- MongoCLI.container_ip(name) do
         {:ok, %ReplicaSetMember{member | host: List.first(ips)}}
       else
         _ ->
           IO.puts "starting #{name}"
-          with {:ok, ips} <- Mongod.start(name, repl_set_name) do
+          with {:ok, ips} <- MongoCLI.mongod(name, repl_set_name) do
             {:ok, %ReplicaSetMember{member | host: List.first(ips)}}
           end
       end
@@ -100,7 +102,7 @@ defmodule Mongoman.ReplicaSet do
   defp create_replica_set(%ReplicaSetConfig{members: [primary | _]} = config) do
     with %ReplicaSetMember{host: host} <- primary,
          {:ok, config_str} <- Poison.encode(config),
-         {:ok, json} <- Mongoman.mongosh("rs.initiate(#{config_str})", host),
+         {:ok, json} <- MongoCLI.mongo("rs.initiate(#{config_str})", host),
          {:ok, decoded} <- Poison.decode(json),
          :ok <- validate(decoded) do
       {:ok, config}
