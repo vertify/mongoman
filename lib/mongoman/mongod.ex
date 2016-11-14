@@ -1,30 +1,54 @@
 defmodule Mongoman.Mongod do
-  @moduledoc ~S"""
-  Returns arguments for starting up mongod with the given ID.
-  """
-  def run(mongod_id, repl_set_name, opts \\ []) do
-    base_path_components =
-      [Application.get_env(:mongoman, :root_path), repl_set_name, mongod_id]
-      |> Enum.map(&to_string/1)
-    base_path = Path.join(base_path_components)
-    data_path = Path.join(base_path, "data")
-    log_path = Path.join(base_path, "log")
-    lock_path = Path.join(data_path, "mongod.lock")
-
-    args =
-      ["--logpath", log_path, "--fork", "--dbpath", data_path,
-       "--replSet", repl_set_name] ++ extra_mongod_opts(opts)
-
-    # TODO: wait for mongod to start listening
-    with :ok <- File.mkdir_p(data_path),
-         {_, 0} <- System.cmd("mongod", Enum.map(args, &String.to_charlist/1)),
-         {:ok, lock_data} <- File.read(lock_path),
-         {os_pid, _} <- Integer.parse(String.trim(lock_data)),
-         do: :exec.manage(os_pid, [:monitor])
+  def start(name, repl_set_name) do
+    with {:ok, _} <- create_container(name, repl_set_name),
+         {:ok, ips} when length(ips) > 0 <- container_ip(name),
+         ip = List.first(ips) do
+      {:ok, ips}
+    else
+      {:ok, []} -> {:error, :docker_missing_ip}
+      error -> error
+    end
   end
 
-  defp extra_mongod_opts([{:port, port} | rest_opts]),
-    do: ["--port", to_string(port)] ++ extra_mongod_opts(rest_opts)
-  defp extra_mongod_opts([_ | rest_opts]), do: extra_mongod_opts(rest_opts)
-  defp extra_mongod_opts([]), do: []
+  def create_container(name, repl_set_name) do
+    args = [
+      "run", "-d", "--name", name, "mongo",
+      "mongod", "--replSet", repl_set_name
+    ]
+    opts = [stderr_to_stdout: true]
+
+    with {container_id, 0} <- System.cmd("docker", args, opts) do
+      {:ok, String.trim(container_id)}
+    else
+      {error, _} -> {:error, String.trim(error)}
+    end
+  end
+
+  def container_ip(container) do
+    args = [
+      "inspect", "-f",
+      "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+      container
+    ]
+    opts = [stderr_to_stdout: true]
+
+    with {ip_addresses, 0} <- System.cmd("docker", args, opts) do
+      {:ok, String.split(ip_addresses, ~r{\s}, trim: true)}
+    else
+      {error, _} -> {:error, String.trim(error)}
+    end
+  end
+
+  def wait_for_container(container_ip) do
+    case :gen_tcp.connect(String.to_atom(container_ip), 27017, []) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        :ok
+      {:error, :econnrefused} ->
+        Process.sleep(100)
+        wait_for_container(container_ip)
+      {:error, _} = error ->
+        error
+    end
+  end
 end

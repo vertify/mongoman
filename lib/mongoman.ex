@@ -3,19 +3,12 @@ defmodule Mongoman do
   Manages `mongod` instances to configure and run replica sets.
   """
 
-  def mongosh(js, opts \\ []) do
-    port = Keyword.get(opts, :port)
-    hostname = Keyword.get(opts, :hostname)
-    args =
-      ["--eval", to_string(js), "--quiet"] ++
-      (if port != nil, do: ["--port", to_string(port)], else: []) ++
-      (if hostname != nil, do: ["--host", to_string(hostname)], else: [])
-    {output, exit_code} = System.cmd("mongo", args)
-
-    if exit_code == 0 do
-      {:ok, output |> String.trim_trailing}
+  def mongosh(js, host) do
+    args = ["--eval", to_string(js), "--quiet", "--host", to_string(host)]
+    with {output, 0} <- System.cmd("mongo", args) do
+      {:ok, String.trim(output)}
     else
-      {:error, output, exit_code}
+      {error, _} -> {:error, String.trim(error)}
     end
   end
 end

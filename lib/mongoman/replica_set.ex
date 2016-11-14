@@ -1,7 +1,6 @@
 defmodule Mongoman.ReplicaSet do
   use GenServer
-  alias Mongoman.{Mongod, ReplicaSetConfig, ReplicaSetMember,
-                  ReplicaSetDiscovery}
+  alias Mongoman.{Mongod, ReplicaSetConfig, ReplicaSetMember}
 
   @spec start_link(ReplicaSetConfig.t, Keyword.t) :: GenServer.on_start
   def start_link(initial_config, gen_server_opts \\ []) do
@@ -20,17 +19,33 @@ defmodule Mongoman.ReplicaSet do
 
   @doc false
   def init([initial_config]) do
-    with {true, config} <- ReplicaSetDiscovery.run(initial_config) do
-      ensure_all_started(config)
+    if discover(initial_config) do
+      with {:ok, new_config} <- ensure_all_started(initial_config),
+           :ok <- wait_for_all(new_config) do
+        {:ok, new_config}
+      end
     else
-      {false, config} ->
-        with {:ok, new_config} <- ensure_all_started(config) do
-          create_replica_set(new_config)
-        else
-          {:error, reason} -> {:stop, reason}
-        end
-      {:error, reason} -> {:stop, reason}
+      with {:ok, new_config} <- ensure_all_started(initial_config),
+           :ok <- wait_for_all(new_config),
+           {:ok, state} <- create_replica_set(new_config) do
+        {:ok, state}
+      else
+        {:error, reason} -> {:stop, reason}
+      end
     end
+  end
+
+  def discover(config) do
+    %ReplicaSetConfig{id: repl_set_name, members: members} = config
+    Enum.reduce(members, false, fn (member, exists?) ->
+      %ReplicaSetMember{id: id} = member
+      container = make_name(repl_set_name, id)
+      with {:ok, ips} when length(ips) > 0 <- Mongod.container_ip(container) do
+        true
+      else
+        _ -> if exists? do exists? else false end
+      end
+    end)
   end
 
   @doc false
@@ -39,15 +54,25 @@ defmodule Mongoman.ReplicaSet do
     {:reply, nodes, conf}
   end
 
+  defp make_name(repl_set_name, id) do
+    "#{repl_set_name}#{to_string id}"
+  end
+
+  defp wait_for_all(config) do
+    %ReplicaSetConfig{id: repl_set_name, members: members} = config
+    Enum.reduce(members, :ok, fn
+      (%ReplicaSetMember{host: ip}, :ok) ->
+        Mongod.wait_for_container(ip)
+      (_, error) -> error
+    end)
+  end
+
   defp ensure_all_started(config) do
-    %ReplicaSetConfig{_id: repl_set_name, members: members} = config
+    %ReplicaSetConfig{id: repl_set_name, members: members} = config
     Enum.reduce(members, {:ok, %ReplicaSetConfig{config | members: []}}, fn
       (member, {:ok, %ReplicaSetConfig{members: members} = config}) ->
-        case ensure_started(member, repl_set_name) do
-          {:ok, new_member} ->
-            {:ok, %ReplicaSetConfig{config | members: [new_member | members]}}
-          error ->
-            error
+        with {:ok, new_member} <- ensure_started(member, repl_set_name) do
+          {:ok, %ReplicaSetConfig{config | members: [new_member | members]}}
         end
 
       (_, error) ->
@@ -55,34 +80,30 @@ defmodule Mongoman.ReplicaSet do
     end)
   end
 
-  defp ensure_started(%ReplicaSetMember{os_pid: nil} = member, repl_set_name) do
-    with %ReplicaSetMember{_id: id, host: host} <- member,
-         %URI{port: port} <- URI.parse("tcp://#{host}"),
-         {:ok, pid, os_pid} <- Mongod.run(id, repl_set_name, port: port) do
-      {:ok, %ReplicaSetMember{member | os_pid: os_pid, pid: pid}}
+  defp ensure_started(member, repl_set_name) do
+    with %ReplicaSetMember{id: id} <- member,
+         name = make_name(repl_set_name, id) do
+      with {:ok, ips} when length(ips) > 0 <- Mongod.container_ip(name) do
+        {:ok, %ReplicaSetMember{member | host: List.first(ips)}}
+      else
+        _ ->
+          IO.puts "starting #{name}"
+          with {:ok, ips} <- Mongod.start(name, repl_set_name) do
+            {:ok, %ReplicaSetMember{member | host: List.first(ips)}}
+          end
+      end
     else
-      {:error, _} = error -> error
-      _ -> :error
+      _ -> {:error, :badarg}
     end
   end
-  defp ensure_started(member, _), do: {:ok, member}
 
-  defp create_replica_set(%ReplicaSetConfig{} = config) do
-    with {:ok, opts} <- choose_primary(config),
+  defp create_replica_set(%ReplicaSetConfig{members: [primary | _]} = config) do
+    with %ReplicaSetMember{host: host} <- primary,
          {:ok, config_str} <- Poison.encode(config),
-         {:ok, json} <- Mongoman.mongosh("rs.initiate(#{config_str})", opts),
+         {:ok, json} <- Mongoman.mongosh("rs.initiate(#{config_str})", host),
          {:ok, decoded} <- Poison.decode(json),
          :ok <- validate(decoded) do
       {:ok, config}
-    end
-  end
-
-  defp choose_primary(%ReplicaSetConfig{members: [member | _]}) do
-    with %ReplicaSetMember{host: host} <- member,
-         %URI{host: hostname, port: port} <- URI.parse("tcp://#{host}") do
-      {:ok, [hostname: hostname, port: port || 27017]}
-    else
-      _ -> :error
     end
   end
 
