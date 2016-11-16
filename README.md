@@ -7,6 +7,7 @@ Features
 
 - [x] Configure replica sets
 - [x] Starts and manages `mongod` processes through Docker: no Erlang ports
+- [ ] Automatically reconfigure and reuse existing Mongo containers
 - [ ] Configure sharded clusters
 - [ ] Temporarily remove a node from a replica set to rebuild big indexes (WIP)
 
@@ -22,17 +23,11 @@ Add `mongoman` to your list of dependencies in `mix.exs`:
 
 ## Examples
 
-Starts a local replica set named `"my_repl_set"` with 5 members:
+Start a replica set named `"my_repl_set"` with 9 members:
 
-    config = %ReplicaSetConfig{id: "my_repl_set", members: [
-      %ReplicaSetMember{id: 0},
-      %ReplicaSetMember{id: 1},
-      %ReplicaSetMember{id: 2},
-      %ReplicaSetMember{id: 3},
-      %ReplicaSetMember{id: 4}
-    ]}
-    {:ok, pid} = Mongoman.ReplicaSet.start_link(config)
+    alias Mongoman.{ReplicaSet, ReplicaSetConfig}
+    {:ok, pid} = ReplicaSet.start_link(ReplicaSetConfig.make("my_repl_set", 9))
 
-## Similar Projects
+## Prior Art
 
 - https://github.com/christkv/mongodb-topology-manager
