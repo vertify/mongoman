@@ -7,7 +7,7 @@ Features
 
 - [x] Configure replica sets
 - [x] Starts and manages `mongod` processes through Docker: no Erlang ports
-- [ ] Automatically reconfigure and reuse existing Mongo containers
+- [x] Automatically reconfigure and reuse existing Mongo containers
 - [ ] Configure sharded clusters
 - [ ] Temporarily remove a node from a replica set to rebuild big indexes (WIP)
 
