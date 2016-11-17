@@ -216,11 +216,13 @@ defmodule Mongoman.ReplicaSet do
 
   defp reconfig(config) do
     with %ReplicaSetMember{host: host} <- find_primary(config),
-         # should check node config and make sure it matches our config...
-         # reconfig won't work here
+         # this pulls down the existing config
          {:ok, existing_member_map} <- existing_member_map(host),
+         # and uses it to maintain the same pairing between ID and host in the
+         # new config
          {:ok, config} <- transform_config(config, existing_member_map),
          {:ok, config_str} <- Poison.encode(config),
+         # upload and validate the new config
          {:ok, result} <- MongoCLI.mongo("rs.reconfig(#{config_str})", host),
          :ok <- validate(result) do
       {:ok, config}
