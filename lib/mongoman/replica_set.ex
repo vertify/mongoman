@@ -176,10 +176,50 @@ defmodule Mongoman.ReplicaSet do
     end
   end
 
+  defp existing_member_map(host) do
+    with {:ok, config} <- MongoCLI.mongo("rs.conf()", host) do
+      members =
+        Enum.map(config["members"], fn member ->
+          {member["host"], member["_id"]}
+        end)
+        |> Enum.into(%{})
+      {:ok, members}
+    end
+  end
+
+  defp transform_config(config, existing_member_map) do
+    %ReplicaSetConfig{members: members} = config
+
+    new_members_result =
+      members
+      |> Enum.reduce({:ok, []}, &transform_member(existing_member_map, &1, &2))
+
+    with {:ok, new_members} <- new_members_result do
+      {:ok, %ReplicaSetConfig{config | members: new_members}}
+    end
+  end
+
+  def transform_member(existing_member_map, member, {:ok, members}) do
+    host = if String.ends_with?(member.host, ":27017") do
+      member.host
+    else
+      "#{member.host}:27017"
+    end
+    new_id = existing_member_map[host]
+    if new_id != nil do
+      {:ok, [%ReplicaSetMember{member | id: new_id} | members]}
+    else
+      {:error, :configuration_changed}
+    end
+  end
+  def transform_member(_, _, {:error, _} = error), do: error
+
   defp reconfig(config) do
     with %ReplicaSetMember{host: host} <- find_primary(config),
          # should check node config and make sure it matches our config...
          # reconfig won't work here
+         {:ok, existing_member_map} <- existing_member_map(host),
+         {:ok, config} <- transform_config(config, existing_member_map),
          {:ok, config_str} <- Poison.encode(config),
          {:ok, result} <- MongoCLI.mongo("rs.reconfig(#{config_str})", host),
          :ok <- validate(result) do
