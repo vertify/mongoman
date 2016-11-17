@@ -31,11 +31,10 @@ defmodule Mongoman.ReplicaSetTest do
   test "non-voting members" do
     config = ReplicaSetConfig.make("non_voting_set", 8)
 
-    assert {:ok, pid} = ReplicaSet.start_link(config)
     on_exit fn ->
-      expected = List.duplicate(:ok, 8)
-      assert ^expected = Map.values(ReplicaSet.delete_config(config))
+      ReplicaSet.delete_config(config)
     end
+    assert {:ok, pid} = ReplicaSet.start_link(config)
 
     assert length(ReplicaSet.nodes(pid)) == 8
   end

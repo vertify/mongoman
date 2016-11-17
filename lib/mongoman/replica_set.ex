@@ -99,7 +99,9 @@ defmodule Mongoman.ReplicaSet do
 
   @doc false
   def handle_call(:nodes, _from, %ReplicaSetConfig{members: members} = conf) do
-    nodes = Enum.map(members, fn %ReplicaSetMember{host: host} -> host end)
+    nodes = Enum.map(members, fn %ReplicaSetMember{host: host} ->
+      "#{host}:27017"
+    end)
     {:reply, nodes, conf}
   end
 
