@@ -8,7 +8,7 @@ defmodule Mongoman.ReplicaSet do
   end
 
   def nodes(pid) do
-    GenServer.call(pid, :nodes)
+    GenServer.call(pid, :nodes, :infinity)
   end
 
   def stop(pid) do
@@ -16,7 +16,7 @@ defmodule Mongoman.ReplicaSet do
   end
 
   def delete(pid) do
-    GenServer.call(pid, :delete)
+    GenServer.call(pid, :delete, :infinity)
   end
 
   def delete_config(config) do
@@ -35,7 +35,7 @@ defmodule Mongoman.ReplicaSet do
     if discover(initial_config) do
       with {:ok, config} <- reconfigure_members(initial_config),
            :ok <- wait_for_all(config),
-           Process.sleep(15000), # wait for election after restarting dead nodes
+           Process.sleep(15000), # wait for primary election
            {:ok, state} <- reconfig(config) do
         {:ok, state}
       else
@@ -178,6 +178,8 @@ defmodule Mongoman.ReplicaSet do
 
   defp reconfig(config) do
     with %ReplicaSetMember{host: host} <- find_primary(config),
+         # should check node config and make sure it matches our config...
+         # reconfig won't work here
          {:ok, config_str} <- Poison.encode(config),
          {:ok, result} <- MongoCLI.mongo("rs.reconfig(#{config_str})", host),
          :ok <- validate(result) do
