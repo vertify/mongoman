@@ -28,6 +28,15 @@ Start a replica set named `"my_repl_set"` with 9 members:
     alias Mongoman.{ReplicaSet, ReplicaSetConfig}
     {:ok, pid} = ReplicaSet.start_link(ReplicaSetConfig.make("my_repl_set", 9))
 
+## QA
+
+#### The tests are slow!
+
+Sorry, that's just how long it takes to start up all those Mongo instances. Some
+of the tests for failure modes try to start replica sets with 51 nodes. I will
+write checks for these specific failure cases to prevent starting up the nodes
+when we know it will fail to fix this soon.
+
 ## Prior Art
 
 - https://github.com/christkv/mongodb-topology-manager

@@ -15,21 +15,36 @@ defmodule Mongoman.ReplicaSet do
     GenServer.stop(pid)
   end
 
+  def delete(pid) do
+    GenServer.call(pid, :delete)
+  end
+
+  def delete_config(config) do
+    %ReplicaSetConfig{id: repl_set_name, members: members} = config
+    for %ReplicaSetMember{id: id} = member <- members, into: %{} do
+      name = make_name(repl_set_name, id)
+      MongoCLI.kill(name)
+      {member, MongoCLI.delete(name)}
+    end
+  end
+
   # GenServer callbacks
 
   @doc false
   def init([initial_config]) do
     if discover(initial_config) do
-      with {:ok, new_config} <- ensure_all_started(initial_config),
-           :ok <- wait_for_all(new_config) do
-        {:ok, new_config}
+      with {:ok, config} <- reconfigure_members(initial_config),
+           :ok <- wait_for_all(config),
+           Process.sleep(15000), # wait for election after restarting dead nodes
+           {:ok, state} <- reconfig(config) do
+        {:ok, state}
       else
         {:error, reason} -> {:stop, reason}
       end
     else
-      with {:ok, new_config} <- ensure_all_started(initial_config),
-           :ok <- wait_for_all(new_config),
-           {:ok, state} <- create_replica_set(new_config) do
+      with {:ok, config} <- ensure_all_started(initial_config),
+           :ok <- wait_for_all(config),
+           {:ok, state} <- initiate(config) do
         {:ok, state}
       else
         {:error, reason} -> {:stop, reason}
@@ -37,20 +52,50 @@ defmodule Mongoman.ReplicaSet do
     end
   end
 
-  def discover(config) do
+  @doc false
+  def terminate(_, config) do
+    if config != nil do
+      %ReplicaSetConfig{id: repl_set_name, members: members} = config
+      for %ReplicaSetMember{id: id} <- members do
+        name = make_name(repl_set_name, id)
+        MongoCLI.kill(name)
+      end
+    end
+  end
+
+  defp discover(config) do
     %ReplicaSetConfig{id: repl_set_name, members: members} = config
     Enum.reduce(members, false, &discover_member(repl_set_name, &1, &2))
   end
 
-  defp discover_member(repl_set_name, member, exists?) do
-    %ReplicaSetMember{id: id} = member
-    container = make_name(repl_set_name, id)
-    with {:ok, ips} when length(ips) > 0 <- MongoCLI.container_ip(container) do
-      true
+  defp discover_member(repl_set_name, %ReplicaSetMember{id: id}, exists?) do
+    if exists? do
+      exists?
     else
-      _ -> if exists? do exists? else false end
+      MongoCLI.discover(make_name(repl_set_name, id))
     end
   end
+
+  defp reconfigure_members(config) do
+    %ReplicaSetConfig{id: repl_set_name, members: members} = config
+
+    new_members_result =
+      members
+      |> Enum.reduce({:ok, []}, &reconfigure_member(repl_set_name, &1, &2))
+
+    with {:ok, new_members} <- new_members_result do
+      {:ok, %ReplicaSetConfig{config | members: new_members}}
+    end
+  end
+
+  defp reconfigure_member(repl_set_name, member, {:ok, members}) do
+    %ReplicaSetMember{id: id} = member
+    name = make_name(repl_set_name, id)
+    with {:ok, ips} <- MongoCLI.reconfigure(name, repl_set_name) do
+      {:ok, [%ReplicaSetMember{member | host: List.first(ips)} | members]}
+    end
+  end
+  defp reconfigure_member(_, _, acc), do: acc
 
   @doc false
   def handle_call(:nodes, _from, %ReplicaSetConfig{members: members} = conf) do
@@ -58,8 +103,13 @@ defmodule Mongoman.ReplicaSet do
     {:reply, nodes, conf}
   end
 
+  @doc false
+  def handle_call(:delete, _, config) do
+    {:stop, :shutdown, delete_config(config), nil}
+  end
+
   defp make_name(repl_set_name, id) do
-    "#{repl_set_name}#{to_string id}"
+    "#{repl_set_name}_#{to_string id}"
   end
 
   defp wait_for_all(config) do
@@ -87,7 +137,7 @@ defmodule Mongoman.ReplicaSet do
     errors = Enum.filter(new_members, is_error)
 
     if length(errors) > 0 do
-      for alive_member <- new_members, !is_error.(alive_member) do
+      for {:ok, alive_member} <- new_members do
         name = make_name(repl_set_name, alive_member.id)
         # ignore the return of kill; we don't want to fail handling a failure
         MongoCLI.kill(name)
@@ -117,15 +167,41 @@ defmodule Mongoman.ReplicaSet do
     end
   end
 
-  defp create_replica_set(%ReplicaSetConfig{members: [primary | _]} = config) do
+  defp initiate(%ReplicaSetConfig{members: [primary | _]} = config) do
     with %ReplicaSetMember{host: host} <- primary,
          {:ok, config_str} <- Poison.encode(config),
-         {:ok, json} <- MongoCLI.mongo("rs.initiate(#{config_str})", host),
-         {:ok, decoded} <- Poison.decode(json),
-         :ok <- validate(decoded) do
+         {:ok, result} <- MongoCLI.mongo("rs.initiate(#{config_str})", host),
+         :ok <- validate(result) do
       {:ok, config}
     end
   end
+
+  defp reconfig(config) do
+    with %ReplicaSetMember{host: host} <- find_primary(config),
+         {:ok, config_str} <- Poison.encode(config),
+         {:ok, result} <- MongoCLI.mongo("rs.reconfig(#{config_str})", host),
+         :ok <- validate(result) do
+      {:ok, config}
+    else
+      nil -> {:error, :primary_not_found}
+      error -> error
+    end
+  end
+
+  defp find_primary(config) do
+    %ReplicaSetConfig{members: members} = config
+    Enum.reduce(members, nil, &primary?/2)
+  end
+
+  defp primary?(member, nil) do
+    with %ReplicaSetMember{host: host} <- member,
+         {:ok, %{"ismaster" => true}} <- MongoCLI.mongo("db.isMaster()", host) do
+      member
+    else
+      _ -> nil
+    end
+  end
+  defp primary?(_, primary), do: primary
 
   defp validate(decoded) do
     if decoded["ok"] == 0 && decoded["code"] != 23 do
