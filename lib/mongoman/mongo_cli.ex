@@ -153,13 +153,20 @@ defmodule Mongoman.MongoCLI do
   end
 
   def mongo(js, opts \\ []) do
-    run_js = "JSON.stringify(#{to_string js})"
+    run_js = if opts[:no_json] do
+      js
+    else
+      "JSON.stringify(#{js})"
+    end
+
     with {:ok, args} <- validate_opts(opts),
          args = ["--eval", run_js | args],
-         IO.inspect(args),
          {output, 0} <- System.cmd("mongo", args) do
-      IO.puts output
-      Poison.decode(String.trim(output))
+      if opts[:no_json] do
+        {:ok, String.trim(output)}
+      else
+        Poison.decode(String.trim(output))
+      end
     else
       {error, _} -> {:error, String.trim(error)}
     end
