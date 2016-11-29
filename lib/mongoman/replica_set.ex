@@ -172,14 +172,14 @@ defmodule Mongoman.ReplicaSet do
   defp initiate(%ReplicaSetConfig{members: [primary | _]} = config) do
     with %ReplicaSetMember{host: host} <- primary,
          {:ok, config_str} <- Poison.encode(config),
-         {:ok, result} <- MongoCLI.mongo("rs.initiate(#{config_str})", host),
+         {:ok, result} <- MongoCLI.mongo("rs.initiate(#{config_str})", host: host),
          :ok <- validate(result) do
       {:ok, config}
     end
   end
 
   defp existing_member_map(host) do
-    with {:ok, config} <- MongoCLI.mongo("rs.conf()", host) do
+    with {:ok, config} <- MongoCLI.mongo("rs.conf()", host: host) do
       members =
         Enum.map(config["members"], fn member ->
           {member["host"], member["_id"]}
@@ -225,7 +225,7 @@ defmodule Mongoman.ReplicaSet do
          {:ok, config} <- transform_config(config, existing_member_map),
          {:ok, config_str} <- Poison.encode(config),
          # upload and validate the new config
-         {:ok, result} <- MongoCLI.mongo("rs.reconfig(#{config_str})", host),
+         {:ok, result} <- MongoCLI.mongo("rs.reconfig(#{config_str})", host: host),
          :ok <- validate(result) do
       {:ok, config}
     else
@@ -241,7 +241,7 @@ defmodule Mongoman.ReplicaSet do
 
   defp primary?(member, nil) do
     with %ReplicaSetMember{host: host} <- member,
-         {:ok, %{"ismaster" => true}} <- MongoCLI.mongo("db.isMaster()", host) do
+         {:ok, %{"ismaster" => true}} <- MongoCLI.mongo("db.isMaster()", host: host) do
       member
     else
       _ -> nil

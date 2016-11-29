@@ -127,10 +127,36 @@ defmodule Mongoman.MongoCLI do
     end
   end
 
-  def mongo(js, host) do
+  defp replica_set_to_host(%Mongoman.ReplicaSetConfig{id: repl_set_name,
+                                                      members: members}) do
+    hosts =
+      members
+      |> Enum.map(fn %Mongoman.ReplicaSetMember{host: host} -> host end)
+      |> Enum.join(",")
+    "#{repl_set_name}/#{hosts}"
+  end
+
+  defp mongo_opts([{:replica_set, replica_set_config} | rest]),
+    do: ["--host", replica_set_to_host(replica_set_config) | mongo_opts(rest)]
+  defp mongo_opts([{:host, host} | rest]),
+    do: ["--host", to_string(host) | mongo_opts(rest)]
+  defp mongo_opts([{:database, db} | rest]), do: [db | mongo_opts(rest)]
+  defp mongo_opts([_ | rest]), do: mongo_opts(rest)
+  defp mongo_opts([]), do: ["--quiet"]
+
+  defp validate_opts(opts) do
+    if Keyword.has_key?(opts, :replica_set) && Keyword.has_key?(opts, :host) do
+      {:error, :badarg}
+    else
+      {:ok, mongo_opts(opts)}
+    end
+  end
+
+  def mongo(js, opts \\ []) do
     run_js = "JSON.stringify(#{to_string js})"
-    args = ["--eval", run_js, "--quiet", "--host", to_string(host)]
-    with {output, 0} <- System.cmd("mongo", args) do
+    with {:ok, args} <- validate_opts(opts),
+         args = ["--eval", run_js | args],
+         {output, 0} <- System.cmd("mongo", args) do
       Poison.decode(String.trim(output))
     else
       {error, _} -> {:error, String.trim(error)}
