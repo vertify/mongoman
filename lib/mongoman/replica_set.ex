@@ -19,6 +19,11 @@ defmodule Mongoman.ReplicaSet do
     GenServer.call(pid, :delete, :infinity)
   end
 
+  @doc "Execute a Mongo shell command on the replica set"
+  def mongo(pid, js, opts \\ []) do
+    GenServer.call(pid, {:mongo, js, opts}, :infinity)
+  end
+
   def delete_config(config) do
     %ReplicaSetConfig{id: repl_set_name, members: members} = config
     for %ReplicaSetMember{id: id} = member <- members, into: %{} do
@@ -103,6 +108,11 @@ defmodule Mongoman.ReplicaSet do
       "#{host}:27017"
     end)
     {:reply, nodes, conf}
+  end
+
+  @doc false
+  def handle_call({:mongo, js, opts}, _from, config) do
+    {:reply, MongoCLI.mongo(js, Keyword.put(opts, :replica_set, config)), config}
   end
 
   @doc false
