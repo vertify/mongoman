@@ -156,6 +156,7 @@ defmodule Mongoman.MongoCLI do
     run_js = "JSON.stringify(#{to_string js})"
     with {:ok, args} <- validate_opts(opts),
          args = ["--eval", run_js | args],
+         IO.inspect(args),
          {output, 0} <- System.cmd("mongo", args) do
       Poison.decode(String.trim(output))
     else
