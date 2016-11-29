@@ -16,9 +16,6 @@ defmodule Mongoman.ReplicaSetTest do
     # ensure node ips are available
     assert length(ReplicaSet.nodes(pid)) == 3
 
-    # let primary election finish
-    Process.sleep(15000)
-
     # test killing the containers
     assert :ok = GenServer.stop(pid)
     on_exit :defaults, fn -> nil end

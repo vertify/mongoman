@@ -184,6 +184,7 @@ defmodule Mongoman.ReplicaSet do
          {:ok, config_str} <- Poison.encode(config),
          {:ok, result} <- MongoCLI.mongo("rs.initiate(#{config_str})", host: host),
          :ok <- validate(result) do
+      wait_for_primary(config)
       {:ok, config}
     end
   end
@@ -227,7 +228,7 @@ defmodule Mongoman.ReplicaSet do
   def transform_member(_, _, {:error, _} = error), do: error
 
   defp reconfig(config) do
-    with %ReplicaSetMember{host: host} <- find_primary(config),
+    with %ReplicaSetMember{host: host} <- wait_for_primary(config),
          # this pulls down the existing config
          {:ok, existing_member_map} <- existing_member_map(host),
          # and uses it to maintain the same pairing between ID and host in the
@@ -244,20 +245,28 @@ defmodule Mongoman.ReplicaSet do
     end
   end
 
-  defp find_primary(config) do
-    %ReplicaSetConfig{members: members} = config
-    Enum.reduce(members, nil, &primary?/2)
-  end
-
-  defp primary?(member, nil) do
-    with %ReplicaSetMember{host: host} <- member,
-         {:ok, %{"ismaster" => true}} <- MongoCLI.mongo("db.isMaster()", host: host) do
-      member
+  defp wait_for_primary(config) do
+    with primary when primary != nil <- find_primary(config) do
+      primary
     else
-      _ -> nil
+      nil ->
+        Process.sleep(100)
+        wait_for_primary(config)
     end
   end
-  defp primary?(_, primary), do: primary
+
+  defp find_primary(config) do
+    %ReplicaSetConfig{members: members} = config
+    Enum.find(members, &primary?/1)
+  end
+
+  defp primary?(%ReplicaSetMember{host: host}) do
+    with {:ok, %{"ismaster" => true}} <- MongoCLI.mongo("db.isMaster()", host: host) do
+      true
+    else
+      _ -> false
+    end
+  end
 
   defp validate(decoded) do
     if decoded["ok"] == 0 && decoded["code"] != 23 do
