@@ -158,6 +158,7 @@ defmodule Mongoman.MongoCLI do
          args = ["--eval", run_js | args],
          IO.inspect(args),
          {output, 0} <- System.cmd("mongo", args) do
+      IO.puts output
       Poison.decode(String.trim(output))
     else
       {error, _} -> {:error, String.trim(error)}
