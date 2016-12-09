@@ -17,17 +17,20 @@ defmodule Mongoman.ReplicaSetConfig do
   Represents the initial and current configuration of a replica set for use with
   `rs.initiate()`, `rs.reconfig()`, and `rs.conf()`.
   """
-  @type t :: %__MODULE__{id: String.t, version: non_neg_integer,
+  @type t :: %__MODULE__{id: String.t,
+                         mongo_version: String.t | nil,
+                         version: non_neg_integer,
                          members: [Mongoman.ReplicaSetMember.t]}
-  defstruct [:id, version: 1, members: []]
+  defstruct [:id, mongo_version: "latest", version: 1, members: []]
 
   @doc ~S"""
   Makes a ReplicaSet 
   """
   @spec make(String.t, 1..50) :: t
-  def make(repl_set_name, num_members \\ 3) do
+  def make(repl_set_name, num_members \\ 3, opts \\ []) do
     %__MODULE__{id: repl_set_name,
                 version: 1,
+                mongo_version: opts[:mongo_version] || "latest",
                 members: for i <- 1..num_members do
                   if i < 8 do
                     %Mongoman.ReplicaSetMember{id: i - 1}
@@ -52,7 +55,7 @@ defimpl Poison.Encoder, for: Mongoman.ReplicaSetConfig do
   def encode(config, options) do
     config
     |> Map.from_struct
-    |> Map.delete(:id)
+    |> Map.drop([:id, :mongo_version])
     |> Map.put(:_id, config.id)
     |> Poison.Encoder.encode(options)
   end

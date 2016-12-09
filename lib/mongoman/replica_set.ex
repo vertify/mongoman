@@ -90,7 +90,6 @@ defmodule Mongoman.ReplicaSet do
     if discover(initial_config) do
       with {:ok, config} <- reconfigure_members(initial_config),
            :ok <- wait_for_all(config),
-           Process.sleep(15000), # wait for primary election
            {:ok, state} <- reconfig(config) do
         {:ok, state}
       else
@@ -185,9 +184,10 @@ defmodule Mongoman.ReplicaSet do
 
   defp ensure_all_started(config) do
     %ReplicaSetConfig{id: repl_set_name, members: members} = config
+    version = config.mongo_version || "latest"
 
     new_members =
-      for member <- Enum.map(members, &ensure_started(&1, repl_set_name)) do
+      for member <- Enum.map(members, &ensure_started(&1, repl_set_name, version)) do
         case member do
           %Task{} = task ->
             Task.await(task, :infinity) # this can take quite a while...
@@ -211,7 +211,7 @@ defmodule Mongoman.ReplicaSet do
     end
   end
 
-  defp ensure_started(member, repl_set_name) do
+  defp ensure_started(member, repl_set_name, version) do
     with %ReplicaSetMember{id: id} <- member,
          name = make_name(repl_set_name, id) do
       with {:ok, ips} when length(ips) > 0 <- MongoCLI.container_ip(name) do
@@ -219,7 +219,7 @@ defmodule Mongoman.ReplicaSet do
       else
         _ ->
           Task.async fn ->
-            with {:ok, ips} <- MongoCLI.mongod(name, repl_set_name) do
+            with {:ok, ips} <- MongoCLI.mongod(name, repl_set_name, version) do
               {:ok, %ReplicaSetMember{member | host: List.first(ips)}}
             end
           end
@@ -232,9 +232,12 @@ defmodule Mongoman.ReplicaSet do
   defp initiate(%ReplicaSetConfig{members: [primary | _]} = config) do
     with %ReplicaSetMember{host: host} <- primary,
          {:ok, config_str} <- Poison.encode(config),
+         IO.puts("test"),
          {:ok, result} <- MongoCLI.mongo("rs.initiate(#{config_str})", host: host),
+         IO.puts("test2"),
          :ok <- validate(result) do
       wait_for_primary(config)
+      IO.puts "fun"
       {:ok, config}
     end
   end

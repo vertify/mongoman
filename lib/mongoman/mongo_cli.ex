@@ -1,8 +1,8 @@
 defmodule Mongoman.MongoCLI do
   @moduledoc false
   
-  def mongod(name, repl_set_name) do
-    with {:ok, _} <- run_container(name, repl_set_name),
+  def mongod(name, repl_set_name, version) do
+    with {:ok, _} <- run_container(name, repl_set_name, version),
          {:ok, ips} when length(ips) > 0 <- container_ip(name) do
       {:ok, ips}
     else
@@ -34,7 +34,7 @@ defmodule Mongoman.MongoCLI do
   end
 
   defp try_reconfigure_without_container(error, name, repl_set_name) do
-    with {:ok, _} <- run_container(name, repl_set_name),
+    with {:ok, _} <- run_container(name, repl_set_name, "latest"),
          {:ok, ips} when length(ips) > 0 <- container_ip(name) do
       {:ok, ips}
     else
@@ -97,10 +97,10 @@ defmodule Mongoman.MongoCLI do
     docker ["start", name]
   end
 
-  def run_container(name, repl_set_name) do
+  def run_container(name, repl_set_name, version) do
     docker [
-      "run", "-d", "--name", name, "--restart", "on-failure:10", "mongo",
-      "mongod", "--replSet", repl_set_name
+      "run", "-d", "--name", name, "--restart", "on-failure:10",
+      "mongo:#{version}", "mongod", "--replSet", repl_set_name
     ]
   end
 
