@@ -1,7 +1,7 @@
 # Mongoman
 
-Configures and starts local or distributed MongoDB clusters. This library can be
-used just for your tests, or you can use it as a core component in your project.
+Configures and starts local or distributed MongoDB clusters. This library is
+intended to be used for tests, and is not production-ready.
 
 Features
 
@@ -9,7 +9,6 @@ Features
 - [x] Starts and manages `mongod` processes through Docker: no Erlang ports
 - [x] Automatically reconfigure and reuse existing Mongo containers
 - [ ] ~~Configure sharded clusters~~
-- [ ] Temporarily remove a node from a replica set to rebuild big indexes (WIP)
 
 ## Installation
 

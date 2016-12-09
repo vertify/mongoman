@@ -1,35 +1,85 @@
 defmodule Mongoman.ReplicaSet do
+  @moduledoc ~S"""
+  A replica set is a cluster of MongoDB nodes that can replicate collection data
+  and distribute queries across multiple `mongod` processes. Mongoman starts a
+  replica set using a bunch of docker containers, and requires a working docker
+  setup on the machine it runs to function properly.
+  """
+
   use GenServer
   alias Mongoman.{MongoCLI, ReplicaSetConfig, ReplicaSetMember}
 
+  @doc ~S"""
+  Starts the replica set using the initial config. If you need to create a
+  config, check out the `Mongoman.ReplicaSetConfig.make/2` helper.
+  """
   @spec start_link(ReplicaSetConfig.t, Keyword.t) :: GenServer.on_start
   def start_link(initial_config, gen_server_opts \\ []) do
     GenServer.start_link(__MODULE__, [initial_config], gen_server_opts)
   end
 
+  @doc ~S"""
+  Gets the list of node host names for use in connecting your MongoDB client to
+  the replica set.
+  """
   def nodes(pid) do
     GenServer.call(pid, :nodes, :infinity)
   end
 
+  @doc ~S"""
+  Stops a ReplicaSet, which shuts down the containers using `docker kill`.
+  """
   def stop(pid) do
     GenServer.stop(pid)
   end
 
+  @doc ~S"""
+  Deletes a ReplicaSet, which PERMANENTLY (!!) erases all of the volumes
+  containing the (perhaps valuable!) database data of all nodes in the cluster.
+  It's very important to note how dangerous this operation is.
+  """
   def delete(pid) do
     GenServer.call(pid, :delete, :infinity)
   end
 
-  @doc "Execute a Mongo shell command on the replica set"
-  def mongo(pid, js, opts \\ []) do
-    GenServer.call(pid, {:mongo, js, opts}, :infinity)
-  end
-
+  @doc ~S"""
+  Deletes a ReplicaSet using only its config, which PERMANENTLY (!!) erases all
+  of the volumes containing the (perhaps valuable!) database data of all nodes
+  in the cluster. It's very important to note how dangerous this operation is.
+  """
   def delete_config(config) do
     %ReplicaSetConfig{id: repl_set_name, members: members} = config
     for %ReplicaSetMember{id: id} = member <- members, into: %{} do
       name = make_name(repl_set_name, id)
       MongoCLI.kill(name)
       {member, MongoCLI.delete(name)}
+    end
+  end
+
+  @doc ~S"""
+  Execute a Mongo shell command on the replica set
+  """
+  def mongo(pid, js, opts \\ []) do
+    GenServer.call(pid, {:mongo, js, opts}, :infinity)
+  end
+
+  @doc ~S"""
+  Gets the version of the `mongod` daemons in a replica set as a
+  `{major, minor, release}` version tuple
+  """
+  @spec version(pid) :: {:ok, {major, minor, release}} | {:error, any}
+  def version(pid) do
+    with {:ok, output} <- ReplicaSet.mongo(rs_pid, "db.version()", no_json: true) do
+      # deals with undesired output from mongo shells connected to replica sets
+      # (this happens even with `--quiet`)
+      version =
+        output
+        |> String.split("\n", trim: true)
+        |> List.last
+        |> String.split(".")
+        |> Enum.map(&elem(Integer.parse(&1), 0))
+        |> List.to_tuple
+      {:ok, version}
     end
   end
 

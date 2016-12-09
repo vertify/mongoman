@@ -1,4 +1,6 @@
 defmodule Mongoman.MongoCLI do
+  @moduledoc false
+  
   def mongod(name, repl_set_name) do
     with {:ok, _} <- run_container(name, repl_set_name),
          {:ok, ips} when length(ips) > 0 <- container_ip(name) do
