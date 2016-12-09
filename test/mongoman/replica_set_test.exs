@@ -2,10 +2,10 @@ defmodule Mongoman.ReplicaSetTest do
   alias Mongoman.{ReplicaSet, ReplicaSetConfig}
   use ExUnit.Case
 
-  for version <- ["2.4", "3.2"] do
+  for {major, minor} = version <- [{2, 4}, {3, 2}] do
     name = ExUnit.Case.register_test(__ENV__, :test, "defaults for version #{version}", [])
     def unquote(name)(_) do
-      opts = [mongo_version: unquote(version)]
+      opts = [mongo_version: unquote(version |> Tuple.to_list |> Enum.join("."))]
       replset = "default_set_#{unquote(version)}"
       IO.inspect opts
       IO.inspect replset
@@ -22,6 +22,9 @@ defmodule Mongoman.ReplicaSetTest do
 
       # ensure node ips are available
       assert length(ReplicaSet.nodes(pid)) == 3
+
+      # ensure we got the version we asked for
+      assert {major, minor, _} = ReplicaSet.version(pid)
 
       # test killing the containers
       assert :ok = GenServer.stop(pid)

@@ -67,9 +67,10 @@ defmodule Mongoman.ReplicaSet do
   Gets the version of the `mongod` daemons in a replica set as a
   `{major, minor, release}` version tuple
   """
-  @spec version(pid) :: {:ok, {major, minor, release}} | {:error, any}
+  @type version :: {non_neg_integer, non_neg_integer, non_neg_integer}
+  @spec version(pid) :: {:ok, version} | {:error, any}
   def version(pid) do
-    with {:ok, output} <- ReplicaSet.mongo(rs_pid, "db.version()", no_json: true) do
+    with {:ok, output} <- mongo(pid, "db.version()", no_json: true) do
       # deals with undesired output from mongo shells connected to replica sets
       # (this happens even with `--quiet`)
       version =
