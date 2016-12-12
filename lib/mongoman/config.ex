@@ -15,7 +15,8 @@ end
 defmodule Mongoman.ReplicaSetConfig do
   @moduledoc ~S"""
   Represents the initial and current configuration of a replica set for use with
-  `rs.initiate()`, `rs.reconfig()`, and `rs.conf()`.
+  `rs.initiate()`, `rs.reconfig()`, and `rs.conf()`. Also stores the Mongo server
+  container version used in Docker (not passed for replica set configuration).
   """
   @type t :: %__MODULE__{id: String.t,
                          mongo_version: String.t | nil,
@@ -24,7 +25,7 @@ defmodule Mongoman.ReplicaSetConfig do
   defstruct [:id, mongo_version: "latest", version: 1, members: []]
 
   @doc ~S"""
-  Makes a ReplicaSet 
+  Makes a ReplicaSet
   """
   @spec make(String.t, 1..50) :: t
   def make(repl_set_name, num_members \\ 3, opts \\ []) do
