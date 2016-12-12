@@ -4,18 +4,18 @@ defmodule Mongoman.Mixfile do
   def project do
     [app: :mongoman,
      description: "Configures and starts local or distributed MongoDB clusters",
-     version: "0.3.5",
+     version: "0.3.6",
      elixir: "~> 1.3",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
-     deps: deps(),
+     deps: deps,
      docs: fn ->
        {ref, 0} =
          System.cmd("git", ["rev-parse", "--verify", "--quiet", "HEAD"])
        [source_ref: ref, source_url: "https://github.com/vertify/mongoman",
         main: "readme", extras: ["README.md"]]
      end,
-     package: package()]
+     package: package]
   end
 
   def application do

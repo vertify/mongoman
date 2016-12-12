@@ -146,23 +146,26 @@ defmodule Mongoman.ReplicaSet do
   defp reconfigure_member(repl_set_name, member, {:ok, members}) do
     %ReplicaSetMember{id: id} = member
     name = make_name(repl_set_name, id)
-    with {:ok, ips} <- MongoCLI.reconfigure(name, repl_set_name) do
-      {:ok, [%ReplicaSetMember{member | host: List.first(ips)} | members]}
+    with {:ok, host} <- MongoCLI.reconfigure(name, repl_set_name) do
+      {:ok, [%ReplicaSetMember{member | host: host} | members]}
     end
   end
   defp reconfigure_member(_, _, acc), do: acc
 
   @doc false
-  def handle_call(:nodes, _from, %ReplicaSetConfig{members: members} = conf) do
-    nodes = Enum.map(members, fn %ReplicaSetMember{host: host} ->
-      "#{host}:27017"
+  def handle_call(:nodes, _from, %ReplicaSetConfig{id: repl_set_id, members: members} = conf) do
+    nodes = Enum.map(members, fn %ReplicaSetMember{id: member_id} ->
+      name = make_name(repl_set_id, member_id)
+      {:ok, host} = MongoCLI.container_host(name)
+      host
     end)
     {:reply, nodes, conf}
   end
 
   @doc false
-  def handle_call({:mongo, js, opts}, _from, config) do
-    {:reply, MongoCLI.mongo(js, Keyword.put(opts, :replica_set, config)), config}
+  def handle_call({:mongo, js, opts}, _from,  %ReplicaSetConfig{members: [member | _]} = config) do
+    name = make_name(config.id, member.id)
+    {:reply, MongoCLI.mongo(name, js, Keyword.put(opts, :replica_set, config)), config}
   end
 
   @doc false
@@ -175,10 +178,11 @@ defmodule Mongoman.ReplicaSet do
   end
 
   defp wait_for_all(config) do
-    %ReplicaSetConfig{members: members} = config
+    %ReplicaSetConfig{id: repl_set_id, members: members} = config
     Enum.reduce(members, :ok, fn
-      (%ReplicaSetMember{host: ip}, :ok) ->
-        MongoCLI.wait_for_container(ip)
+      (%ReplicaSetMember{id: member_id}, :ok) ->
+        name = make_name(repl_set_id, member_id)
+        MongoCLI.wait_for_container(name)
       (_, error) -> error
     end)
   end
@@ -215,13 +219,13 @@ defmodule Mongoman.ReplicaSet do
   defp ensure_started(member, repl_set_name, version) do
     with %ReplicaSetMember{id: id} <- member,
          name = make_name(repl_set_name, id) do
-      with {:ok, ips} when length(ips) > 0 <- MongoCLI.container_ip(name) do
-        {:ok, %ReplicaSetMember{member | host: List.first(ips)}}
+      with {:ok, host} <- MongoCLI.container_host(name) do
+        {:ok, %ReplicaSetMember{member | host: host}}
       else
         _ ->
           Task.async fn ->
-            with {:ok, ips} <- MongoCLI.mongod(name, repl_set_name, version) do
-              {:ok, %ReplicaSetMember{member | host: List.first(ips)}}
+            with {:ok, host} <- MongoCLI.mongod(name, repl_set_name, version) do
+              {:ok, %ReplicaSetMember{member | host: host}}
             end
           end
       end
@@ -230,23 +234,22 @@ defmodule Mongoman.ReplicaSet do
     end
   end
 
-  defp initiate(%ReplicaSetConfig{members: [primary | _]} = config) do
-    with %ReplicaSetMember{host: host} <- primary,
+  defp initiate(%ReplicaSetConfig{id: repl_set_id, members: [primary | _]} = config) do
+    with %ReplicaSetMember{id: member_id} <- primary,
          {:ok, config_str} <- Poison.encode(config),
-         IO.puts("test"),
-         {:ok, result} <- MongoCLI.mongo("rs.initiate(#{config_str})", host: host),
-         IO.puts("test2"),
+         name = make_name(repl_set_id, member_id),
+         {:ok, result} <- MongoCLI.mongo(name, "rs.initiate(#{config_str})"),
          :ok <- validate(result) do
       wait_for_primary(config)
-      IO.puts "fun"
       {:ok, config}
     end
   end
 
-  defp existing_member_map(host) do
-    with {:ok, config} <- MongoCLI.mongo("rs.conf()", host: host) do
+  defp existing_member_map(name) do
+    with {:ok, config} <- MongoCLI.mongo(name, "rs.conf()") do
       members =
-        Enum.map(config["members"], fn member ->
+        config["members"]
+        |> Enum.map(fn member ->
           {member["host"], member["_id"]}
         end)
         |> Enum.into(%{})
@@ -267,12 +270,7 @@ defmodule Mongoman.ReplicaSet do
   end
 
   def transform_member(existing_member_map, member, {:ok, members}) do
-    host = if String.ends_with?(member.host, ":27017") do
-      member.host
-    else
-      "#{member.host}:27017"
-    end
-    new_id = existing_member_map[host]
+    new_id = existing_member_map[member.host]
     if new_id != nil do
       {:ok, [%ReplicaSetMember{member | id: new_id} | members]}
     else
@@ -281,16 +279,17 @@ defmodule Mongoman.ReplicaSet do
   end
   def transform_member(_, _, {:error, _} = error), do: error
 
-  defp reconfig(config) do
-    with %ReplicaSetMember{host: host} <- wait_for_primary(config),
+  defp reconfig(%ReplicaSetConfig{id: repl_set_id} = config) do
+    with %ReplicaSetMember{id: member_id} <- wait_for_primary(config),
+         name = make_name(repl_set_id, member_id),
          # this pulls down the existing config
-         {:ok, existing_member_map} <- existing_member_map(host),
+         {:ok, existing_member_map} <- existing_member_map(name),
          # and uses it to maintain the same pairing between ID and host in the
          # new config
          {:ok, config} <- transform_config(config, existing_member_map),
          {:ok, config_str} <- Poison.encode(config),
          # upload and validate the new config
-         {:ok, result} <- MongoCLI.mongo("rs.reconfig(#{config_str})", host: host),
+         {:ok, result} <- MongoCLI.mongo(name, "rs.reconfig(#{config_str})"),
          :ok <- validate(result) do
       {:ok, config}
     else
@@ -299,6 +298,7 @@ defmodule Mongoman.ReplicaSet do
     end
   end
 
+  # waits for exactly one primary
   defp wait_for_primary(config) do
     with primary when primary != nil <- find_primary(config) do
       primary
@@ -310,12 +310,16 @@ defmodule Mongoman.ReplicaSet do
   end
 
   defp find_primary(config) do
-    %ReplicaSetConfig{members: members} = config
-    Enum.find(members, &primary?/1)
+    %ReplicaSetConfig{id: id, members: members} = config
+    with [primary] <- Enum.filter(members, &primary?(make_name(id, &1.id))) do
+      primary
+    else
+      _ -> nil
+    end
   end
 
-  defp primary?(%ReplicaSetMember{host: host}) do
-    with {:ok, %{"ismaster" => true}} <- MongoCLI.mongo("db.isMaster()", host: host) do
+  defp primary?(member_name) do
+    with {:ok, %{"ismaster" => true}} <- MongoCLI.mongo(member_name, "db.isMaster()") do
       true
     else
       _ -> false

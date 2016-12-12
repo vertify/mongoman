@@ -1,10 +1,10 @@
 defmodule Mongoman.MongoCLI do
   @moduledoc false
-  
+
   def mongod(name, repl_set_name, version) do
     with {:ok, _} <- run_container(name, repl_set_name, version),
-         {:ok, ips} when length(ips) > 0 <- container_ip(name) do
-      {:ok, ips}
+         {:ok, host} <- container_host(name) do
+      {:ok, host}
     else
       {:ok, []} ->
         {:error, :docker_missing_ip}
@@ -13,8 +13,8 @@ defmodule Mongoman.MongoCLI do
   end
 
   def reconfigure(name, repl_set_name) do
-    with {:ok, ips} when length(ips) > 0 <- container_ip(name) do
-      {:ok, ips}
+    with {:ok, host} <- container_host(name) do
+      {:ok, host}
     else
       _ ->
         try_reconfigure_with_container(name, repl_set_name)
@@ -23,8 +23,8 @@ defmodule Mongoman.MongoCLI do
 
   defp try_reconfigure_with_container(name, repl_set_name) do
     with {:ok, _} <- start_container(name),
-         {:ok, ips} when length(ips) > 0 <- container_ip(name) do
-      {:ok, ips}
+         {:ok, host} <- container_host(name) do
+      {:ok, host}
     else
       {:ok, []} ->
         {:error, :docker_missing_ip}
@@ -35,8 +35,8 @@ defmodule Mongoman.MongoCLI do
 
   defp try_reconfigure_without_container(error, name, repl_set_name) do
     with {:ok, _} <- run_container(name, repl_set_name, "latest"),
-         {:ok, ips} when length(ips) > 0 <- container_ip(name) do
-      {:ok, ips}
+         {:ok, host} <- container_host(name) do
+      {:ok, host}
     else
       {:ok, []} ->
         {:error, {error, :docker_missing_ip}}
@@ -99,7 +99,7 @@ defmodule Mongoman.MongoCLI do
 
   def run_container(name, repl_set_name, version) do
     docker [
-      "run", "-d", "--name", name, "--restart", "on-failure:10",
+      "run", "-d", "-P", "--name", name, "--restart", "on-failure:10",
       "mongo:#{version}", "mongod", "--replSet", repl_set_name
     ]
   end
@@ -116,21 +116,49 @@ defmodule Mongoman.MongoCLI do
     end
   end
 
-  def wait_for_container(container_ip) do
-    case :gen_tcp.connect(String.to_atom(container_ip), 27017, []) do
-      {:ok, socket} ->
-        :gen_tcp.close(socket)
-        :ok
-      {:error, :econnrefused} ->
-        Process.sleep(100)
-        wait_for_container(container_ip)
-      {:error, _} = error ->
-        error
+  def container_port(container) do
+    args = [
+      "inspect", "-f",
+      "{{(index (index .NetworkSettings.Ports \"27017/tcp\") 0).HostPort}}",
+      container
+    ]
+
+    with {:ok, port_str} <- docker(args),
+         {port, _} <- Integer.parse(port_str) do
+      {:ok, port}
+    else
+      :error ->
+        {:error, :port_not_integer}
+      error -> error
     end
   end
 
-  defp replica_set_to_host(%Mongoman.ReplicaSetConfig{id: repl_set_name,
-                                                      members: members}) do
+  def container_host(container, port \\ 27017) do
+    with {:ok, [ip | _]} <- container_ip(container) do
+      {:ok, "#{ip}:#{to_string port}"}
+    else
+      {:ok, []} ->
+        {:error, :docker_missing_ip}
+      error -> error
+    end
+  end
+
+  def host_to_port(host) do
+    %{port: port} = URI.parse("mongodb://" <> host)
+    port
+  end
+
+  def wait_for_container(name) do
+    case mongo(name, "db.version()", no_json: true) do
+      {:ok, _} ->
+        :ok
+      {:error, _} ->
+        Process.sleep(100)
+        wait_for_container(name)
+    end
+  end
+
+  defp replica_set_to_host(%Mongoman.ReplicaSetConfig{id: repl_set_name, members: members}) do
     hosts =
       members
       |> Enum.map(fn %Mongoman.ReplicaSetMember{host: host} -> host end)
@@ -140,37 +168,23 @@ defmodule Mongoman.MongoCLI do
 
   defp mongo_opts([{:replica_set, replica_set_config} | rest]),
     do: ["--host", replica_set_to_host(replica_set_config) | mongo_opts(rest)]
-  defp mongo_opts([{:host, host} | rest]),
-    do: ["--host", to_string(host) | mongo_opts(rest)]
   defp mongo_opts([{:database, db} | rest]), do: [db | mongo_opts(rest)]
   defp mongo_opts([_ | rest]), do: mongo_opts(rest)
   defp mongo_opts([]), do: ["--quiet"]
 
-  defp validate_opts(opts) do
-    if Keyword.has_key?(opts, :replica_set) && Keyword.has_key?(opts, :host) do
-      {:error, :badarg}
-    else
-      {:ok, mongo_opts(opts)}
-    end
-  end
-
-  def mongo(js, opts \\ []) do
+  def mongo(name, js, opts \\ []) do
     run_js = if opts[:no_json] do
       js
     else
       "JSON.stringify(#{js})"
     end
 
-    with {:ok, args} <- validate_opts(opts),
-         args = ["--eval", run_js | args],
-         {output, 0} <- System.cmd("mongo", args) do
+    with {:ok, output} <- docker ["exec", name, "mongo", "--eval", run_js | mongo_opts(opts)] do
       if opts[:no_json] do
-        {:ok, String.trim(output)}
+        {:ok, output}
       else
-        Poison.decode(String.trim(output))
+        Poison.decode(output)
       end
-    else
-      {error, _} -> {:error, String.trim(error)}
     end
   end
 end
